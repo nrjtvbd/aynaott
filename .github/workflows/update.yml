@@ -1,7 +1,5 @@
-name: Jagobd Dynamic Update
+name: Jagobd Final Test
 on:
-  schedule:
-    - cron: '*/20 * * * *' # প্রতি ২০ মিনিট পর পর টোকেন রিফ্রেশ করবে
   workflow_dispatch:
 
 jobs:
@@ -13,87 +11,44 @@ jobs:
       - name: Checkout Repo
         uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.10'
-
-      - name: Install Requests
-        run: pip install requests
-
-      - name: Generate M3U
+      - name: Fetch Al Jazeera
         run: |
-          python <<EOF
-          import requests
-          import re
-          import json
+          # 1. Direct page fetch using curl (masking as a real browser)
+          RESPONSE=$(curl -s -L -A "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" "https://www.jagobd.com/aljazeera")
+          
+          # 2. Extract Token using grep and sed
+          TOKEN=$(echo "$RESPONSE" | grep -oP 'wmsAuthSign=[\w.~-]+' | head -1 | cut -d'=' -f2)
+          
+          # 3. Extract Path ID (the long code)
+          PATH_ID=$(echo "$RESPONSE" | grep -oP '(?<=static.jagobd.com.bd/)[a-zA-Z0-9]{50,150}' | head -1)
 
-          def get_link():
-              slug = "aljazeera"
-              # ১. মূল পেজ ভিজিট (মোবাইল হেডার দিয়ে)
-              url = f"https://www.jagobd.com/{slug}"
-              headers = {
-                  'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1',
-                  'Referer': 'https://www.jagobd.com/',
-                  'Accept': '*/*'
-              }
+          if [ -z "$TOKEN" ]; then
+            # Try from iframe if main page fails
+            IFRAME_URL=$(echo "$RESPONSE" | grep -oP '(?<=iframe src=")[^"]+' | head -1)
+            if [[ "$IFRAME_URL" == //* ]]; then IFRAME_URL="https:$IFRAME_URL"; fi
+            
+            IFRAME_RES=$(curl -s -L -A "Mozilla/5.0" -e "https://www.jagobd.com/aljazeera" "$IFRAME_URL")
+            TOKEN=$(echo "$IFRAME_RES" | grep -oP 'wmsAuthSign=[\w.~-]+' | head -1 | cut -d'=' -f2)
+            PATH_ID=$(echo "$IFRAME_RES" | grep -oP '(?<=static.jagobd.com.bd/)[a-zA-Z0-9]{50,150}' | head -1)
+          fi
 
-              try:
-                  print(f"Fetching {slug}...")
-                  response = requests.get(url, headers=headers, timeout=20)
-                  html = response.text
-
-                  # ২. টোকেন (wmsAuthSign) খোঁজা
-                  token_match = re.search(r'wmsAuthSign=([\w.~-]+)', html)
-                  
-                  # ৩. পাথ আইডি খোঁজা (পুরনো app24 এর বদলে নতুন স্ট্রাকচার)
-                  # এটি সাধারণত c3V... দিয়ে শুরু হয়
-                  path_match = re.search(r'([a-zA-Z0-9]{50,150})/aljazeera\.stream', html)
-
-                  if not token_match:
-                      # ব্যাকআপ: আইফ্রেম চেক করা
-                      iframe_url = f"https://tvz.jagobd.com/{slug}"
-                      headers['Referer'] = url
-                      iframe_res = requests.get(iframe_url, headers=headers, timeout=15).text
-                      token_match = re.search(r'wmsAuthSign=([\w.~-]+)', iframe_res)
-                      path_match = re.search(r'([a-zA-Z0-9]{50,150})/aljazeera\.stream', iframe_res)
-
-                  if token_match and path_match:
-                      token = token_match.group(1)
-                      path_id = path_match.group(1)
-                      # আপনার পুরনো স্টাইলের নতুন ভার্সন
-                      return f"https://static.jagobd.com.bd/{path_id}/aljazeera.stream/playlist.m3u8?wmsAuthSign={token}"
-                  
-                  # যদি প্যাটার্ন না মেলে, তবে সরাসরি সোর্স থেকে লিঙ্ক খোঁজা
-                  direct_match = re.search(r'source:\s*"(.*?)"', html)
-                  if direct_match:
-                      return direct_match.group(1)
-
-              except Exception as e:
-                  print(f"Error: {e}")
-              return None
-
-          m3u_content = "#EXTM3U\n"
-          final_link = get_link()
-
-          if final_link:
-              m3u_content += "#EXTINF:-1, Al Jazeera English\n"
-              # রেফারার মাস্ট, নাহলে প্লেয়ারে চলবে না
-              m3u_content += "#EXTVLCOPT:http-referer=https://tvz.jagobd.com/\n"
-              m3u_content += f"{final_link}\n"
-              print("Successfully generated link!")
-          else:
-              m3u_content += "# Error: Could not bypass Jagobd security on GitHub IP\n"
-              print("Failed to get token.")
-
-          with open('jagobd.m3u', 'w') as f:
-              f.write(m3u_content)
-          EOF
+          # Create M3U File
+          echo "#EXTM3U" > jagobd.m3u
+          if [ ! -z "$TOKEN" ]; then
+            FINAL_LINK="https://static.jagobd.com.bd/${PATH_ID:-live}/aljazeera.stream/playlist.m3u8?wmsAuthSign=$TOKEN"
+            echo "#EXTINF:-1, Al Jazeera" >> jagobd.m3u
+            echo "#EXTVLCOPT:http-referer=https://tvz.jagobd.com/" >> jagobd.m3u
+            echo "$FINAL_LINK" >> jagobd.m3u
+            echo "Success: Link Found"
+          else
+            echo "# Error: Token not found" >> jagobd.m3u
+            echo "Failed: IP Blocked"
+          fi
 
       - name: Commit and Push
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
           git add jagobd.m3u
-          git commit -m "Update Jagobd [$(date)]" || exit 0
+          git commit -m "Jagobd Update" || exit 0
           git push
