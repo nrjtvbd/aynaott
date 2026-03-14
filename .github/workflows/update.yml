@@ -1,11 +1,11 @@
-name: Jagobd Auto Playlist
+name: Jagobd Al Jazeera Fix
 on:
   schedule:
     - cron: '*/20 * * * *'
   workflow_dispatch:
 
 jobs:
-  generate:
+  build:
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -21,62 +21,64 @@ jobs:
       - name: Install Requests
         run: pip install requests
 
-      - name: Grab Al Jazeera Link
+      - name: Fetch Al Jazeera
         run: |
           python <<EOF
           import requests
           import re
 
-          def get_stream():
-              url = 'https://www.jagobd.com/aljazeera'
-              headers = {
-                  'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
-                  'Referer': 'https://www.jagobd.com/'
-              }
-              
-              try:
-                  # ১. মূল পেজ থেকে আইফ্রেম খোঁজা
-                  response = requests.get(url, headers=headers, timeout=15).text
-                  iframe_match = re.search(r'iframe src=\"(.*?)\"', response)
-                  
-                  if iframe_match:
-                      iframe_url = iframe_match.group(1)
-                      if iframe_url.startswith('//'): iframe_url = 'https:' + iframe_url
-                      
-                      # ২. আইফ্রেমের ভেতর থেকে সরাসরি m3u8 বা টোকেন বের করা
-                      res_iframe = requests.get(iframe_url, headers=headers, timeout=15).text
-                      
-                      # wmsAuthSign খুঁজে বের করা
-                      token_match = re.search(r'wmsAuthSign=([\w.~-]+)', res_iframe)
-                      path_match = re.search(r'c3VydmVyX8[\w.~-]+', res_iframe) # আপনার লগের সেই বিশেষ পাথ
-                      
-                      if token_match:
-                          token = token_match.group(1)
-                          # পাথ যদি আইফ্রেম থেকে পাওয়া যায় তবে সেটি ব্যবহার করা, নাহলে ডিফল্ট
-                          path = path_match.group(0) if path_match else "c3VydmVyX8RpbEU9Mi8xNy8yMFDEEHGcfRgzQ6NTAgdEoaeFzbF92YWxIZTO0U0ezN1IzMyfvcEdsEfeDeKiNkVN3PTOmdFseWRtaW51aiPhnPTI2"
-                          
-                          return f"https://static.jagobd.com.bd/{path}/aljazeera.stream/playlist.m3u8?wmsAuthSign={token}"
-                  
-                  return None
-              except Exception as e:
-                  print(f"Error: {e}")
-                  return None
+          # নতুন টার্গেট URL এবং হেডার
+          url = "https://www.jagobd.com/aljazeera"
+          headers = {
+              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36',
+              'Referer': 'https://www.jagobd.com/',
+              'Accept-Language': 'en-US,en;q=0.9'
+          }
 
-          final_link = get_stream()
+          m3u_text = '#EXTM3U\n'
           
-          m3u_content = "#EXTM3U\n"
-          if final_link:
-              m3u_content += "#EXTINF:-1, Al Jazeera English\n"
-              m3u_content += "#EXTVLCOPT:http-user-agent=Mozilla/5.0\n"
-              m3u_content += "#EXTVLCOPT:http-referer=https://tvz.jagobd.com/\n"
-              m3u_content += f"{final_link}\n"
-              print("Successfully generated link!")
-          else:
-              m3u_content += "# No Link Found\n"
-              print("Link not found, creating empty file.")
+          try:
+              print("Fetching Al Jazeera Page...")
+              response = requests.get(url, headers=headers, timeout=20)
+              html = response.text
+
+              # ১. লিঙ্কে থাকা সেই রহস্যময় হাশ/পাথ খোঁজা
+              # আপনার দেওয়া লগ অনুযায়ী: c3VydmVyX8R...
+              path_match = re.search(r'([a-zA-Z0-9]{30,150})/aljazeera\.stream', html)
+              
+              # ২. টোকেন (wmsAuthSign) খোঁজা
+              token_match = re.search(r'wmsAuthSign=([\w.~-]+)', html)
+
+              if not token_match:
+                  # যদি মেইন পেজে না থাকে, তবে তাদের ইন্টারনাল প্লেয়ার লিঙ্কে খোঁজা
+                  iframe_url = "https://tvz.jagobd.com/aljazeera"
+                  print("Checking Player Iframe...")
+                  headers['Referer'] = url
+                  iframe_res = requests.get(iframe_url, headers=headers, timeout=15).text
+                  token_match = re.search(r'wmsAuthSign=([\w.~-]+)', iframe_res)
+                  if not path_match:
+                      path_match = re.search(r'([a-zA-Z0-9]{30,150})/aljazeera\.stream', iframe_res)
+
+              if token_match and path_match:
+                  token = token_match.group(1)
+                  path_id = path_match.group(1)
+                  # আপনার নেটওয়ার্ক লগ অনুযায়ী লিঙ্কের ফরম্যাট:
+                  stream_url = f"https://static.jagobd.com.bd/{path_id}/aljazeera.stream/playlist.m3u8?wmsAuthSign={token}"
+                  
+                  m3u_text += "#EXTINF:-1, Al Jazeera English\n"
+                  m3u_text += "#EXTVLCOPT:http-referer=https://tvz.jagobd.com/\n"
+                  m3u_text += f"{stream_url}\n"
+                  print("Success: Al Jazeera link generated!")
+              else:
+                  print("Failed: Token or Path not found.")
+                  # যদি কিছু না পায়, অন্তত স্ট্যাটিক ফরম্যাট ট্রাই করা
+                  m3u_text += "# Error: Could not fetch fresh token\n"
+
+          except Exception as e:
+              print(f"Error: {str(e)}")
 
           with open('jagobd.m3u', 'w') as f:
-              f.write(m3u_content)
+              f.write(m3u_text)
           EOF
 
       - name: Commit and Push
@@ -84,5 +86,5 @@ jobs:
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
           git add jagobd.m3u
-          git commit -m "Update Al Jazeera Link" || exit 0
+          git commit -m "Update Al Jazeera [$(date)]" || exit 0
           git push
