@@ -1,69 +1,51 @@
-name: Update Jagobd Playlist
-on:
-  schedule:
-    - cron: '*/15 * * * *' # প্রতি ১৫ মিনিটে টোকেন আপডেট হবে
-  workflow_dispatch:
-
-jobs:
-  build:
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    steps:
-      - name: Checkout Repo
-        uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-
-      - name: Install Requests
-        run: pip install requests
-
-      - name: Fetch Jagobd Tokens
+- name: Fetch Jagobd Tokens
         run: |
           python -c "
           import requests
           import re
-          import base64
 
-          def get_token(channel):
+          def get_jagobd_stream(channel):
               url = f'https://www.jagobd.com/{channel}'
-              headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
+              headers = {
+                  'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                  'Referer': 'https://www.jagobd.com/'
+              }
               try:
-                  response = requests.get(url, headers=headers, timeout=10).text
-                  # ডাইনামিক টোকেন বা অথ সাইন খোঁজা
-                  match = re.search(r'wmsAuthSign=(.*?)\"', response)
-                  if match:
-                      return match.group(1)
-                  # অল্টারনেটিভ সোর্স খোঁজা
-                  match_alt = re.search(r'token=(.*?)\"', response)
-                  return match_alt.group(1) if match_alt else None
-              except:
-                  return None
+                  # মূল পেজ থেকে তথ্য নেয়া
+                  res = requests.get(url, headers=headers, timeout=15).text
+                  
+                  # ডাইনামিক সোর্স ইউআরএল খোঁজা (নতুন প্যাটার্ন)
+                  stream_match = re.search(r'source:\s*\"(.*?)\"', res)
+                  if stream_match:
+                      return stream_match.group(1)
+                  
+                  # যদি সরাসরি না পাওয়া যায়, তবে আইফ্রেম সোর্স চেক করা
+                  iframe_match = re.search(r'iframe src=\"(.*?)\"', res)
+                  if iframe_match:
+                      iframe_url = iframe_match.group(1)
+                      # আইফ্রেম থেকে টোকেনসহ লিঙ্ক খোঁজা
+                      res_iframe = requests.get(iframe_url, headers=headers).text
+                      token_match = re.search(r'wmsAuthSign=(.*?)\"', res_iframe)
+                      if token_match:
+                          return f'https://static.jagobd.com.bd/live/{channel}.stream/playlist.m3u8?wmsAuthSign={token_match.group(1)}'
+              except Exception as e:
+                  print(f'Error fetching {channel}: {e}')
+              return None
 
-          channels = ['aljazeera', 'somoy-tv', 'ekattor-tv'] # এখানে আরও চ্যানেল যোগ করা যাবে
+          # আপনার পছন্দের চ্যানেলগুলোর নাম (জাগোবিডি ইউআরএল অনুযায়ী)
+          channels = ['aljazeera', 'somoy-tv', 'ekattor-tv', 'btv-world']
           m3u_content = '#EXTM3U\n'
           
           for ch in channels:
-              token = get_token(ch)
-              if token:
-                  # জাগোবিডির স্ট্যান্ডার্ড স্ট্রিম ফরম্যাট
-                  stream_url = f'https://static.jagobd.com.bd/live/{ch}.stream/playlist.m3u8?wmsAuthSign={token}'
+              stream_link = get_jagobd_stream(ch)
+              if stream_link:
                   m3u_content += f'#EXTINF:-1, Jagobd {ch.upper()}\n'
-                  # প্লেয়ারের জন্য রেফারার হেডার মাস্ট
+                  # রেফারার ছাড়া জাগোবিডি চলবে না
                   m3u_content += f'#EXTVLCOPT:http-referer=https://tvz.jagobd.com/\n'
-                  m3u_content += f'{stream_url}\n'
+                  m3u_content += f'#EXTVLCOPT:http-user-agent=Mozilla/5.0\n'
+                  m3u_content += f'{stream_link}\n'
           
           with open('jagobd.m3u', 'w') as f:
               f.write(m3u_content)
+          print('jagobd.m3u created successfully!')
           "
-
-      - name: Commit and Push
-        run: |
-          git config --global user.name "github-actions[bot]"
-          git config --global user.email "github-actions[bot]@users.noreply.github.com"
-          git add jagobd.m3u
-          git commit -m "Jagobd Playlist Auto Updated" || exit 0
-          git push
