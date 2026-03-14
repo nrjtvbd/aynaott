@@ -1,0 +1,67 @@
+name: Jagobd Auto Playlist
+on:
+  schedule:
+    - cron: '*/30 * * * *' # প্রতি ৩০ মিনিট পর পর আপডেট হবে
+  workflow_dispatch: # আপনি নিজেও যখন ইচ্ছা রান করতে পারবেন
+
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout Repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Install Requests
+        run: pip install requests
+
+      - name: Fetch Channels
+        run: |
+          python -c "
+          import requests
+          import re
+
+          channels = {
+              'Al Jazeera': 'aljazeera',
+              'Somoy TV': 'somoy-tv',
+              'Ekattor TV': 'ekattor-tv',
+              'BTV World': 'btv-world'
+          }
+
+          m3u_text = '#EXTM3U\n'
+          headers = {
+              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+              'Referer': 'https://www.jagobd.com/'
+          }
+
+          for name, slug in channels.items():
+              try:
+                  res = requests.get(f'https://www.jagobd.com/{slug}', headers=headers, timeout=10).text
+                  token_match = re.search(r'wmsAuthSign=([\w.~-]+)', res)
+                  
+                  if token_match:
+                      token = token_match.group(1)
+                      link = f'https://static.jagobd.com.bd/live/{slug}.stream/playlist.m3u8?wmsAuthSign={token}'
+                      m3u_text += f'#EXTINF:-1, {name}\n'
+                      m3u_text += f'#EXTVLCOPT:http-referer=https://tvz.jagobd.com/\n'
+                      m3u_text += f'{link}\n'
+              except:
+                  pass
+
+          with open('jagobd.m3u', 'w') as f:
+              f.write(m3u_text)
+          "
+
+      - name: Commit and Push
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git add jagobd.m3u
+          git commit -m "Updated Jagobd M3U" || exit 0
+          git push
