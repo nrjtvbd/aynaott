@@ -31,7 +31,12 @@ jobs:
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
-          git add -A
-          # || exit 0 দেওয়ার কারণ হলো যদি কোনো পরিবর্তন না থাকে তবে যাতে এরর না দেয়
-          git commit -m "📺 Auto Update Channels: $(date)" || echo "No changes to commit"
+          
+          # শুধুমাত্র ফাইলগুলো তৈরি হলেই অ্যাড করবে
+          git add internal_data.json AynaOTT.m3u || echo "Files not found"
+          
+          # যদি কোনো পরিবর্তন থাকে তবেই কমিট করবে, পরিবর্তন না থাকলে এরর দেবে না
+          git commit -m "📺 Auto Update: BTV World ($(date))" || echo "No changes to commit"
+          
+          # পুশ করার চেষ্টা করবে
           git push || echo "No changes to push"
