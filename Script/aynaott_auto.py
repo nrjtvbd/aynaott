@@ -1,80 +1,76 @@
 import requests
-import re
+import os
 import json
 from datetime import datetime
 
-def get_token_stealth(slug):
-    session = requests.Session()
-    
-    # এটি মনিরুল ইসলামের মতো ডেভেলপারদের গোপন অস্ত্র: নিখুঁত হেডার সেট
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36",
-        "Referer": "https://aynaott.com/",
-        "Origin": "https://aynaott.com",
-        "Accept": "*/*",
-        "Accept-Language": "en-US,en;q=0.9",
-        "Sec-Fetch-Dest": "empty",
-        "Sec-Fetch-Mode": "cors",
-        "Sec-Fetch-Site": "cross-site"
-    }
+# ✅ API URL from GitHub Secret
+API_URL = os.environ.get("AYNAOTT_API_URL")
+
+def generate_playlist():
+    print("🚀 Starting Auto Playlist Generator...")
+
+    if not API_URL:
+        print("❌ AYNAOTT_API_URL secret not found")
+        return
+
+    # আয়নাস্কোপের স্ট্রিমিং লিঙ্কগুলো সাধারণত এই হেডার ছাড়া কাজ করে না
+    # তাই আমরা M3U ফাইলে এগুলো অ্যাপেন্ড করে দেব
+    vlc_headers = "|User-Agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36&Referer=https://aynaott.com/"
 
     try:
-        # ধাপ ১: প্রথমে পেজটি লোড করা যাতে সেশন কুকি তৈরি হয়
-        page_url = f"https://aynaott.com/live/{slug}"
-        res = session.get(page_url, headers=headers, timeout=15)
-        
-        # ধাপ ২: সোর্স কোড থেকে টোকেন কোয়েরি খোঁজা
-        # আয়নাস্কোপের ইন্টারনাল স্ক্রিপ্ট এখন এই ফরম্যাটে টোকেন জেনারেট করে
-        source = res.text
-        token_match = re.search(r'token=([a-zA-Z0-9]+)', source)
-        expiry_match = re.search(r'e=(\d+)', source)
-        uid_match = re.search(r'u=([a-z0-9-]+)', source)
-        
-        if token_match and expiry_match:
-            e = expiry_match.group(1)
-            token = token_match.group(1)
-            u = uid_match.group(1)
+        print("📡 Fetching data from API...")
+        response = requests.get(API_URL, timeout=25)
+        response.raise_for_status()
+        raw = response.json()
+    except Exception as e:
+        print(f"❌ API Fetch Error: {e}")
+        return
+
+    # ডাটা ফরম্যাট হ্যান্ডলিং
+    data = raw if isinstance(raw, list) else raw.get("response", [])
+
+    if not isinstance(data, list) or len(data) == 0:
+        print("⚠️ Valid channel data not found.")
+        return
+
+    file_path = "AynaOTT.m3u"
+    json_path = "internal_data.json"
+
+    try:
+        # ১. M3U ফাইল জেনারেট করা
+        with open(file_path, "w", encoding="utf-8") as f:
+            f.write("#EXTM3U\n")
+            channel_count = 0
+
+            for ch in data:
+                if not isinstance(ch, dict): continue
+                
+                name = ch.get("title", "Unknown")
+                logo = ch.get("logo", "")
+                url = ch.get("url", "").strip()
+                group = ch.get("category", "AynaOTT")
+
+                if url:
+                    # লিঙ্ক এর সাথে হেডার যোগ করা যাতে সব প্লেয়ারে চলে
+                    f.write(f'#EXTINF:-1 tvg-logo="{logo}" group-title="{group}",{name}\n')
+                    f.write(f"{url}{vlc_headers}\n\n")
+                    channel_count += 1
             
-            # সার্ভার অটো ডিটেকশন (tvsen6/tvsen7)
-            server = "tvsen6" if "tvsen6" in source else "tvsen7"
-            # স্লাগ কনভারশন (btv-world -> btv_world)
-            clean_slug = slug.replace('-', '_')
-            
-            final_url = f"https://{server}.aynascope.net/{clean_slug}/index.m3u8?e={e}&u={u}&token={token}"
-            return final_url
-    except:
-        pass
-    return None
+            f.write(f"# Total Channels: {channel_count}\n")
+            f.write(f"# Last Update: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
 
-def main():
-    channels = [
-        {"name": "BTV World", "slug": "btv-world"},
-        {"name": "T Sports HD", "slug": "t-sports-hd"},
-        {"name": "Somoy TV", "slug": "somoy-tv"},
-        {"name": "GTV Live", "slug": "gtv-live"}
-    ]
-    
-    print("🚀 Running Stealth Scraper (AynaOTT Method)...")
-    
-    internal_data = {"status": "active", "updated_at": datetime.now().strftime('%Y-%m-%d %H:%M:%S'), "payload": []}
-    m3u_content = "#EXTM3U\n"
-    vlc_headers = "|User-Agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36&Referer=https://aynaott.com/"
+        # ২. ব্যাকআপের জন্য JSON ফাইল জেনারেট করা (আপনার অ্যাপের জন্য সুবিধা হবে)
+        with open(json_path, "w", encoding="utf-8") as jf:
+            json.dump({
+                "status": "active",
+                "last_update": datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                "channels": data
+            }, jf, indent=4)
 
-    success = 0
-    for ch in channels:
-        url = get_token_stealth(ch['slug'])
-        if url:
-            internal_data["payload"].append({"name": ch['name'], "src": url})
-            m3u_content += f'#EXTINF:-1 group-title="AynaOTT",{ch["name"]}\n{url}{vlc_headers}\n\n'
-            print(f"✅ {ch['name']} updated.")
-            success += 1
-        else:
-            print(f"❌ {ch['name']} failed.")
+        print(f"✅ Success! Generated {channel_count} channels.")
 
-    if success > 0:
-        with open("internal_data.json", "w") as f: json.dump(internal_data, f, indent=4)
-        with open("AynaOTT.m3u", "w") as f: f.write(m3u_content)
-        print(f"\n✨ Done! {success} channels ready.")
+    except Exception as e:
+        print(f"❌ File Writing Error: {e}")
 
 if __name__ == "__main__":
-    main()
+    generate_playlist()
