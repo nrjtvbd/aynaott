@@ -1,5 +1,21 @@
 {
-    "status": "active",
-    "last_update": "2026-04-11 15:37:54",
-    "payload": []
+    "last_update": "2026-04-11 19:43:43",
+    "channels": [
+        {
+            "name": "BTV World",
+            "url": "https://tvsen6.aynascope.net/btv_world/index.m3u8?e=1775936088&u=78be6644-0a65-48ec-81a4-089ac65a2619&token=72b315b564b4c931bebd88d28525a2f8"
+        },
+        {
+            "name": "T Sports",
+            "url": "https://tvsen7.aynascope.net/t_sports_hd/index.m3u8?e=1775936088&u=78be6644-0a65-48ec-81a4-089ac65a2619&token=72b315b564b4c931bebd88d28525a2f8"
+        },
+        {
+            "name": "Somoy TV",
+            "url": "https://tvsen6.aynascope.net/somoy_tv/index.m3u8?e=1775936088&u=78be6644-0a65-48ec-81a4-089ac65a2619&token=72b315b564b4c931bebd88d28525a2f8"
+        },
+        {
+            "name": "GTV Live",
+            "url": "https://tvsen6.aynascope.net/gtv_live/index.m3u8?e=1775936088&u=78be6644-0a65-48ec-81a4-089ac65a2619&token=72b315b564b4c931bebd88d28525a2f8"
+        }
+    ]
 }
