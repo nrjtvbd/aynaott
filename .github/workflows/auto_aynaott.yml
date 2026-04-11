@@ -26,18 +26,18 @@ jobs:
       - name: Run Scraper
         env:
           AYNAOTT_API_URL: ${{ secrets.AYNAOTT_API_URL }}
-          run: python Script/aynaott_auto.py
+        run: python Script/aynaott_auto.py
           
       - name: Commit & Push
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
           
-          # শুধুমাত্র ফাইলগুলো তৈরি হলেই অ্যাড করবে
+          # ফাইলগুলো অ্যাড করা
           git add internal_data.json AynaOTT.m3u || echo "Files not found"
           
-          # যদি কোনো পরিবর্তন থাকে তবেই কমিট করবে, পরিবর্তন না থাকলে এরর দেবে না
-          git commit -m "📺 Auto Update: BTV World ($(date))" || echo "No changes to commit"
+          # পরিবর্তন থাকলে কমিট করা
+          git commit -m "📺 Auto Update: Channels ($(date))" || echo "No changes to commit"
           
-          # পুশ করার চেষ্টা করবে
+          # পুশ করা
           git push || echo "No changes to push"
