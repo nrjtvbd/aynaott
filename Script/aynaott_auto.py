@@ -2,90 +2,91 @@ import requests
 import re
 import os
 import time
-import concurrent.futures
+import random
+from concurrent.futures import ThreadPoolExecutor
 
-# এটি আপনার রিপোজিটরি থেকে আইডিগুলো পড়ার জন্য
-SOURCE_FILE = "Script/aynaott.txt"
+# ব্রাউজারের মতো নিখুঁত হেডার
+USER_AGENTS = [
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Mobile Safari/537.36"
+]
 
-def hijack_token(ch_name, ch_id):
-    """সরাসরি আয়নাস্কোপের প্লেয়ার থেকে টোকেন বের করার মেথড"""
-    # আয়নাস্কোপ এখন রেফারার এবং কুকি ছাড়া টোকেন দেয় না
-    session = requests.Session()
+def hijack_token_v2(name, ch_id):
+    """মনিরুলের PHP ফাইল রেন্ডার করে টোকেন বের করার শেষ চেষ্টা"""
+    url = f"http://sm-monirul.top/AyNa/play.php?id={ch_id}"
     
-    # ব্রাউজার ইমুলেশন হেডার
     headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36",
+        "User-Agent": random.choice(USER_AGENTS),
         "Referer": "https://aynaott.com/",
-        "Origin": "https://aynaott.com",
-        "Accept": "*/*"
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+        "Upgrade-Insecure-Requests": "1"
     }
 
     try:
-        # ধাপ ১: মনিরুলের লিঙ্ক ব্যবহার করে আয়নাস্কোপের ডাইরেক্ট প্লেয়ার লিঙ্কে যাওয়া
-        # আমরা সরাসরি মনিরুলের সার্ভার থেকে রিডাইরেক্ট হয়ে টোকেনটি ধরার চেষ্টা করবো
-        bridge_url = f"http://sm-monirul.top/AyNa/play.php?id={ch_id}"
+        # কোনো প্রক্সি ছাড়া সরাসরি রিকোয়েস্ট
+        response = requests.get(url, headers=headers, timeout=12)
         
-        # আমরা AllOrigins প্রক্সি ব্যবহার করছি গিটহাবের আইপি ব্লক এড়াতে
-        proxy_url = f"https://api.allorigins.win/get?url={bridge_url}"
-        
-        response = session.get(proxy_url, timeout=15)
         if response.status_code == 200:
-            content = response.json().get('contents', '')
+            html = response.text
+            # টোকেনের রেগুলার এক্সপ্রেশন (প্যাটার্ন ১)
+            token_match = re.search(r'\?(e=\d+&u=[a-z0-9-]+&token=[a-zA-Z0-9]+)', html)
             
-            # ধাপ ২: কন্টেন্ট থেকে টোকেন প্যারামিটার খুঁজে বের করা (e, u, token)
-            match = re.search(r'\?(e=\d+&u=[a-z0-9-]+&token=[a-zA-Z0-9]+)', content)
-            
-            if match:
-                token_string = match.group(1)
+            if not token_match:
+                # যদি সরাসরি না পাওয়া যায়, তবে রিডাইরেক্ট ইউআরএল চেক করা
+                token_match = re.search(r'index\.m3u8\?(e=\d+&u=[a-z0-9-]+&token=[a-zA-Z0-9]+)', html)
+
+            if token_match:
+                token = token_match.group(1)
                 
-                # সার্ভার নোড অটো সিলেকশন
+                # সার্ভার নোড নির্ধারণ
                 if "tsports" in ch_id.lower() or "sports" in ch_id.lower():
                     srv = "tvsen7"
-                elif len(ch_id) > 20 and "-" not in ch_id: # Star Sports type IDs
+                elif "star" in ch_id.lower() or len(ch_id) > 20:
                     srv = "tvsen5"
                 else:
                     srv = "tvsen6"
                 
-                final_link = f"https://{srv}.aynascope.net/{ch_id}/index.m3u8?{token_string}"
-                return f'#EXTINF:-1 group-title="NRJTVBD", {ch_name}\n{final_link}\n\n'
-    except Exception:
+                final_link = f"https://{srv}.aynascope.net/{ch_id}/index.m3u8?{token}"
+                return f'#EXTINF:-1 group-title="NRJTVBD", {name}\n{final_link}\n\n'
+    except:
         pass
     return None
 
 def main():
-    print("🔓 Starting Token Hijacking from Aynascope...")
+    print("🧨 Initiating Ultimate Token Hijacker...")
+    source_file = "Script/aynaott.txt"
     
-    if not os.path.exists(SOURCE_FILE):
+    if not os.path.exists(source_file):
         print("❌ aynaott.txt missing!")
         return
 
-    with open(SOURCE_FILE, "r", encoding="utf-8") as f:
-        data = f.read()
+    with open(source_file, "r", encoding="utf-8") as f:
+        content = f.read()
 
-    matches = re.findall(r'#EXTINF:.*,(.*)\n.*id=([^&\s]+)', data)
-    print(f"📡 Targets Identified: {len(matches)} channels.")
+    matches = re.findall(r'#EXTINF:.*,(.*)\n.*id=([^&\s]+)', content)
+    print(f"🎯 Targeted Channels: {len(matches)}")
 
     results = []
-    # ৫টি থ্রেড দিয়ে কাজ করছি যাতে আয়নাস্কোপের ফায়ারওয়াল সন্দেহ না করে
-    with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
-        future_to_ch = {executor.submit(hijack_token, n.strip(), i.strip()): n for n, i in matches}
+    # ৩টি থ্রেড দিয়ে ধীরগতিতে কাজ করা (যাতে ব্লক না করে)
+    with ThreadPoolExecutor(max_workers=3) as executor:
+        futures = {executor.submit(hijack_token_v2, n.strip(), i.strip()): n for n, i in matches}
         
-        for future in concurrent.futures.as_completed(future_to_ch):
+        for future in futures:
             res = future.result()
             if res:
                 results.append(res)
-                print(f"✅ Captured: {future_to_ch[future]}")
+                print(f"✅ {futures[future]} -> Token Captured!")
             else:
-                print(f"💀 Failed: {future_to_ch[future]}")
+                print(f"💀 {futures[future]} -> Access Denied")
             
-            # আয়নাস্কোপকে বিভ্রান্ত করতে সামান্য বিরতি
-            time.sleep(0.2)
+            # সার্ভারকে সন্দেহ করার সুযোগ না দিতে র্যান্ডম গ্যাপ
+            time.sleep(random.uniform(0.5, 1.5))
 
-    # প্লেলিস্ট সেভ করা
     with open("AynaOTT.m3u", "w", encoding="utf-8") as f:
         f.write("#EXTM3U\n" + "".join(results))
 
-    print(f"\n💎 Successfully Hijacked {len(results)}/272 tokens.")
+    print(f"\n✨ Extraction Completed. Total: {len(results)} channels.")
 
 if __name__ == "__main__":
     main()
